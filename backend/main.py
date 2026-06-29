@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from api.aqi import router as aqi_router
 
 app = FastAPI(title="Sentinel AI")
 
@@ -10,6 +11,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(aqi_router)
 
 @app.get("/")
 def root():
