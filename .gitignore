@@ -1,0 +1,19 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Node
+node_modules/
+.next/
+out/
+.env.local
+
+# ML artifacts
+*.pkl
+*.model
+
+# Misc
+.DS_Store
+*.log
