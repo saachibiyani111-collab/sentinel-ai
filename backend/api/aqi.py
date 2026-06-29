@@ -36,7 +36,7 @@ def get_pune_aqi():
             "radius": 25000,
             "limit": 100,
         }
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=15)
+        resp = requests.get(url, headers=HEADERS, params=params, timeout=(5, 8))
         resp.raise_for_status()
         data = resp.json()
 
@@ -53,7 +53,7 @@ def get_pune_aqi():
 
         return {"count": len(stations), "stations": stations}
 
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return {"error": str(e), "count": 0, "stations": []}
 
 
