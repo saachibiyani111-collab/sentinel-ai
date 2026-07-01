@@ -14,6 +14,20 @@ Fully transparent scoring (no black box) - each factor is explainable.
 """
 
 import math
+import requests
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+
+def get_live_wind(lat, lon):
+    try:
+        params = {"latitude": lat, "longitude": lon,
+                  "current": "wind_direction_10m,wind_speed_10m",
+                  "timezone": "Asia/Kolkata"}
+        r = requests.get(WEATHER_URL, params=params, timeout=10)
+        r.raise_for_status()
+        cur = r.json().get("current", {})
+        return cur.get("wind_direction_10m"), cur.get("wind_speed_10m")
+    except requests.exceptions.RequestException:
+        return None, None
 
 # Known Pune pollution sources (real places, representative coordinates).
 # type + base_intensity (0-10) reflect how much each typically emits.
@@ -90,13 +104,27 @@ def analyze_ward(ward_lat, ward_lon, wind_from_deg):
     ranked = sorted(scored, key=lambda s: s["score"], reverse=True)
     return ranked
 
+def analyze_ward_live(ward_lat, ward_lon):
+    """Fetch live wind, then analyze. Falls back to 270 (west) if wind API is down."""
+    wind_from, wind_speed = get_live_wind(ward_lat, ward_lon)
+    used_fallback = wind_from is None
+    if wind_from is None:
+        wind_from = 270
+    ranked = analyze_ward(ward_lat, ward_lon, wind_from)
+    return {
+        "wind_from_deg": wind_from,
+        "wind_speed": wind_speed,
+        "wind_is_live": not used_fallback,
+        "causes": ranked,
+    }
+
 
 if __name__ == "__main__":
-    # Test: Shivajinagar ward, wind from the west (270)
     ward = (18.5308, 73.8474)
-    wind_from = 270  # from west
-    print("Root Cause for Shivajinagar (wind from West):\n")
-    ranked = analyze_ward(ward[0], ward[1], wind_from)
-    for s in ranked[:5]:
+    print("Root Cause for Shivajinagar (LIVE wind):\n")
+    result = analyze_ward_live(ward[0], ward[1])
+    live = "LIVE" if result["wind_is_live"] else "FALLBACK (wind API unavailable)"
+    print(f"  Wind from: {result['wind_from_deg']} deg  [{live}]\n")
+    for s in result["causes"][:5]:
         up = "UPWIND" if s["upwind"] else "downwind"
         print(f"  {s['contribution_pct']:>3}%  {s['name']:<35} ({s['type']}, {s['distance_km']}km, {up})")
