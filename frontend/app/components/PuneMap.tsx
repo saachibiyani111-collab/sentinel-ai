@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -20,13 +20,13 @@ const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 function categoryColor(category: string): string {
   switch (category) {
-    case "Good": return "#22c55e";
-    case "Satisfactory": return "#84cc16";
-    case "Moderate": return "#eab308";
-    case "Poor": return "#f97316";
-    case "Very Poor": return "#ef4444";
-    case "Severe": return "#7e22ce";
-    default: return "#9ca3af";
+    case "Good": return "#15803d";
+    case "Satisfactory": return "#4d7c0f";
+    case "Moderate": return "#ca8a04";
+    case "Poor": return "#c2410c";
+    case "Very Poor": return "#b91c1c";
+    case "Severe": return "#6b21a8";
+    default: return "#4b5563";
   }
 }
 
@@ -45,7 +45,7 @@ export default function PuneMap() {
             type: "raster",
             tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
             tileSize: 256,
-            attribution: "© OpenStreetMap contributors",
+            attribution: "OpenStreetMap contributors",
           },
         },
         layers: [{ id: "osm", type: "raster", source: "osm" }],
@@ -65,7 +65,12 @@ export default function PuneMap() {
           if (w.lat == null || w.lon == null) return;
           const color = categoryColor(w.category);
           const popup = new maplibregl.Popup({ offset: 12 }).setHTML(
-            `<strong>${w.name}</strong><br/>AQI: <b>${w.aqi ?? "-"}</b> (${w.category})<br/>Dominant: ${w.dominant ?? "-"}<br/>PM2.5: ${w.pm25 ?? "-"} | PM10: ${w.pm10 ?? "-"}`
+            `<div style="color:#111827; font-family:sans-serif; font-size:13px; line-height:1.6; padding:4px 6px; min-width:150px;">
+              <strong style="font-size:15px; color:#000;">${w.name}</strong><br/>
+              AQI: <b style="color:${color}; font-size:14px;">${w.aqi ?? "-"}</b> <span style="color:#374151;">(${w.category})</span><br/>
+              Dominant: <b>${w.dominant ?? "-"}</b><br/>
+              PM2.5: ${w.pm25 ?? "-"} &nbsp;|&nbsp; PM10: ${w.pm10 ?? "-"}
+            </div>`
           );
           new maplibregl.Marker({ color })
             .setLngLat([w.lon, w.lat])
