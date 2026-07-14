@@ -13,6 +13,8 @@ app.add_middleware(
 )
 
 app.include_router(aqi_router)
+from intervention_api import router as intervention_router
+app.include_router(intervention_router)
 
 @app.get("/")
 def root():
