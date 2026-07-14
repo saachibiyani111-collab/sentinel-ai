@@ -113,3 +113,33 @@ def post_simulate_all(req: SimulateAllRequest):
             if results else None,
         },
     }
+# ---------------------------------------------------------------------------
+# PS Item 3: Enforcement Intelligence  |  PS Item 5 (lite): Citizen Advisory
+# ---------------------------------------------------------------------------
+
+from enforcement import recommend
+from advisory import advisory_for, advisories_all
+
+
+@router.get("/enforce/{ward}")
+def get_enforcement_plan(ward: str, base_aqi: float):
+    """
+    Prioritised, evidence-backed enforcement action plan for one ward.
+    base_aqi: the ward's current AQI (from /api/aqi/pune).
+    """
+    return recommend(ward, base_aqi)
+
+
+@router.get("/advisory/{ward}")
+def get_advisory(ward: str, aqi: float):
+    """Bilingual (EN + Marathi) citizen health advisory for one ward."""
+    return advisory_for(ward, aqi)
+
+
+@router.get("/advisory")
+def get_all_advisories(city_aqi: float):
+    """Advisories for all wards, derived from live city AQI x alpha."""
+    if apply_ward_bias is None:
+        return {"error": "ward_bias not available"}
+    rows = apply_ward_bias(city_aqi, WARD_COORDS)
+    return {"advisories": advisories_all({r["ward"]: r["aqi"] for r in rows})}
