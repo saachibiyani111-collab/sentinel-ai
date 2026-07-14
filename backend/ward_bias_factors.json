@@ -1,0 +1,63 @@
+{
+  "_meta": {
+    "description": "Per-ward composite-AQI multipliers. ward_aqi = live_city_aqi * alpha.",
+    "method": "paired-hourly ratio: mean(station) / mean(city) over hours both reported",
+    "city_hours_used": 19231,
+    "notes": [
+      "Composite AQI only; source files have no per-pollutant columns.",
+      "All wards get a real alpha (no 1.0 fallbacks) via hour-pairing.",
+      "Affine (alpha*city+beta) tested and rejected: produced negative AQI at low readings.",
+      "Unknown wards fall back to alpha=1.0 in the apply code."
+    ]
+  },
+  "wards": {
+    "Revenue Colony Shivajinagar": {
+      "alpha": 1.54,
+      "station_mean_aqi": 165.4,
+      "city_mean_aqi_paired": 107.4,
+      "n_paired_hours": 17724
+    },
+    "Mhada Colony": {
+      "alpha": 0.977,
+      "station_mean_aqi": 106.9,
+      "city_mean_aqi_paired": 109.4,
+      "n_paired_hours": 17105
+    },
+    "Bhosari": {
+      "alpha": 0.965,
+      "station_mean_aqi": 105.2,
+      "city_mean_aqi_paired": 108.9,
+      "n_paired_hours": 11565
+    },
+    "Transport Nagar Nigdi": {
+      "alpha": 0.886,
+      "station_mean_aqi": 95.0,
+      "city_mean_aqi_paired": 107.2,
+      "n_paired_hours": 12630
+    },
+    "Hadapsar": {
+      "alpha": 0.837,
+      "station_mean_aqi": 84.4,
+      "city_mean_aqi_paired": 100.9,
+      "n_paired_hours": 10982
+    },
+    "MIT Kothrud": {
+      "alpha": 0.783,
+      "station_mean_aqi": 81.8,
+      "city_mean_aqi_paired": 104.5,
+      "n_paired_hours": 12718
+    },
+    "Savitribai Phule University": {
+      "alpha": 0.739,
+      "station_mean_aqi": 85.6,
+      "city_mean_aqi_paired": 115.8,
+      "n_paired_hours": 4705
+    },
+    "Katraj Dairy": {
+      "alpha": 0.673,
+      "station_mean_aqi": 75.5,
+      "city_mean_aqi_paired": 112.3,
+      "n_paired_hours": 4761
+    }
+  }
+}
