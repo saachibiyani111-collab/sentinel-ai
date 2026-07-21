@@ -1,532 +1,270 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  Ward,
+  categoryColor,
+  formatContextTime,
+  formatNumber,
+  isUsableCurrentWard,
+} from "./sentinelTypes";
+
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 type ActionItem = {
-  lever: string;
-  label: string;
-  evidence: string;
-  projected_aqi: number;
-  pct_drop: number;
-  actions: string[];
-  priority?: number;
-  reason?: string;
+  lever?: string;
+  label?: string;
+  evidence?: string | null;
+  reason?: string | null;
+  actions?: string[];
+  priority?: number | null;
+  intervention_potential?: number | null;
+  intervention_potential_pct?: number | null;
+  why?: string[];
 };
 
 type EnforcementPlan = {
-  ward: string;
-  base_aqi: number;
-  recommended: ActionItem[];
-  not_recommended: ActionItem[];
+  ward?: string;
+  recommended?: ActionItem[];
+  not_recommended?: ActionItem[];
+  current_aqi_context?: number | null;
+  base_aqi?: number | null;
+  aqi_context_source?: string;
+  aqi_context_reading_time?: string | null;
+  aqi_context_method?: string;
 };
 
 type Advisory = {
-  ward: string;
-  aqi: number;
-
-  category: {
-    en: string;
-    mr: string;
-  };
-
-  advisory: {
-    en: string;
-    mr: string;
-  };
-
-  sensitive_groups: {
-    en: string;
-    mr: string;
-  };
+  ward?: string;
+  aqi?: number | null;
+  category?: { en?: string; mr?: string };
+  advisory?: { en?: string; mr?: string };
+  sensitive_groups?: { en?: string; mr?: string };
+  aqi_context_source?: string;
+  aqi_context_reading_time?: string | null;
+  aqi_context_method?: string;
 };
 
-const BACKEND =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-
 type Props = {
-  ward: string | null;
-
-  // Original baseline AQI.
-  baseAqi: number;
-
-  // Existing simulator output.
-  // Used ONLY for UI display.
-  simulatedAqi: number | null;
-
+  selectedWard: Ward | null;
   onClose: () => void;
 };
 
-export default function WardCard({
-  ward,
-  baseAqi,
-  simulatedAqi,
-  onClose,
-}: Props) {
-  const [plan, setPlan] =
-    useState<EnforcementPlan | null>(null);
+function potential(action: ActionItem): string | null {
+  const raw = action.intervention_potential_pct ?? action.intervention_potential;
+  if (raw == null || !Number.isFinite(raw)) return null;
+  const value = raw <= 1 ? raw * 100 : raw;
+  return `${value.toFixed(1)}%`;
+}
 
-  const [advisory, setAdvisory] =
-    useState<Advisory | null>(null);
-
-  const [loading, setLoading] =
-    useState(false);
+export default function WardCard({ selectedWard, onClose }: Props) {
+  const [plan, setPlan] = useState<EnforcementPlan | null>(null);
+  const [advisory, setAdvisory] = useState<Advisory | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [partialError, setPartialError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!ward) {
+    if (!selectedWard) {
       setPlan(null);
       setAdvisory(null);
+      setPartialError(null);
       return;
     }
 
-    setLoading(true);
+    const controller = new AbortController();
 
-    const encoded = encodeURIComponent(ward);
+    async function load() {
+      setLoading(true);
+      setPlan(null);
+      setAdvisory(null);
+      setPartialError(null);
 
-    // IMPORTANT:
-    // Both calls intentionally use baseAqi.
-    // simulatedAqi does not affect these APIs.
-    Promise.all([
-      fetch(
-        `${BACKEND}/api/enforce/${encoded}?base_aqi=${baseAqi}`
-      ).then((r) => r.json()),
+      const encoded = encodeURIComponent(selectedWard!.name);
 
-      fetch(
-        `${BACKEND}/api/advisory/${encoded}?aqi=${baseAqi}`
-      ).then((r) => r.json()),
-    ])
-      .then(([enforceData, advisoryData]) => {
-        setPlan(enforceData);
-        setAdvisory(advisoryData);
-      })
+      try {
+        const results = await Promise.allSettled([
+          fetch(`${BACKEND}/api/enforce/${encoded}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+          fetch(`${BACKEND}/api/advisory/${encoded}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+        ]);
 
-      .catch((err) =>
-        console.error(
-          "Failed to load ward detail:",
-          err
-        )
-      )
+        if (controller.signal.aborted) return;
 
-      .finally(() =>
-        setLoading(false)
-      );
-  }, [ward, baseAqi]);
+        let failures = 0;
 
-  if (!ward) return null;
+        const enforcement = results[0];
+        if (enforcement.status === "fulfilled" && enforcement.value.ok) {
+          setPlan(await enforcement.value.json());
+        } else {
+          failures += 1;
+        }
 
-  const hasSimulation =
-    simulatedAqi != null;
+        const health = results[1];
+        if (health.status === "fulfilled" && health.value.ok) {
+          setAdvisory(await health.value.json());
+        } else {
+          failures += 1;
+        }
 
-  const simulationDrop =
-    hasSimulation && baseAqi > 0
-      ? (
-          ((baseAqi - simulatedAqi) / baseAqi) *
-          100
-        ).toFixed(1)
-      : null;
+        if (failures === 2) {
+          setPartialError("Decision-intelligence endpoints are temporarily unavailable. Current AQI context is still shown below.");
+        } else if (failures === 1) {
+          setPartialError("One supporting intelligence service is temporarily unavailable. Available results are shown.");
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setPartialError("Supporting decision intelligence could not be refreshed.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => controller.abort();
+  }, [selectedWard]);
+
+  if (!selectedWard) return null;
+
+  const ward = selectedWard;
+  const usable = isUsableCurrentWard(ward);
+  const color = categoryColor(usable ? ward.category : undefined);
+  const recommended = plan?.recommended ?? [];
+  const base = ward.base_modeled_aqi;
+  const factor = ward.historical_spatial_factor;
+  const adjusted = ward.historical_factor_applied_to_current_aqi === true;
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        top: 74,
-        right: 16,
-        width: 360,
-        maxHeight: "calc(100vh - 100px)",
-        overflowY: "auto",
-        background: "rgba(15, 23, 42, 0.97)",
-        color: "#f8fafc",
-        border: "1px solid rgba(148, 163, 184, 0.16)",
-        borderRadius: 12,
-        padding: 16,
-        fontFamily: "sans-serif",
-        fontSize: 13,
-        zIndex: 10,
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.2)",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* HEADER */}
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 12,
-        }}
-      >
+    <aside className="sentinel-ward-card sentinel-panel">
+      <div className="sentinel-card-header">
         <div>
-          <strong
-            style={{
-              fontSize: 16,
-            }}
-          >
-            {ward}
-          </strong>
-
-          <div
-            style={{
-              color: "#64748b",
-              fontSize: 9,
-              marginTop: 3,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
-          >
-            Ward Intelligence
-          </div>
+          <div className="sentinel-eyebrow">WARD INTELLIGENCE</div>
+          <h2>{ward.name}</h2>
+          <p>Current air-quality context and explainable decision support</p>
         </div>
-
-        <button
-          onClick={onClose}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#94a3b8",
-            cursor: "pointer",
-            fontSize: 18,
-            lineHeight: 1,
-          }}
-        >
-          &times;
-        </button>
+        <button className="sentinel-close" type="button" onClick={onClose} aria-label="Close ward panel">×</button>
       </div>
 
-      {/* ACTIVE WHAT-IF SCENARIO */}
-
-      {hasSimulation && (
-        <div
-          style={{
-            background: "rgba(34, 197, 94, 0.08)",
-            border: "1px solid rgba(74, 222, 128, 0.28)",
-            borderRadius: 8,
-            padding: 11,
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              color: "#4ade80",
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.07em",
-              marginBottom: 8,
-            }}
-          >
-            What-if scenario active
+      <section className="sentinel-aqi-hero" style={{ borderColor: `${color}45` }}>
+        <div className="sentinel-aqi-number" style={{ background: color }}>
+          <span>AQI</span>
+          <strong>{usable ? formatNumber(ward.aqi, 0) : "—"}</strong>
+        </div>
+        <div className="sentinel-aqi-copy">
+          <div className="sentinel-aqi-category" style={{ color }}>
+            {usable ? ward.category : "Current context unavailable"}
           </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: "#94a3b8",
-                  fontSize: 9,
-                  marginBottom: 1,
-                }}
-              >
-                Current AQI
-              </div>
-
-              <strong
-                style={{
-                  fontSize: 20,
-                }}
-              >
-                {baseAqi.toFixed(1)}
-              </strong>
-            </div>
-
-            <div
-              style={{
-                color: "#64748b",
-                fontSize: 18,
-              }}
-            >
-              &rarr;
-            </div>
-
-            <div>
-              <div
-                style={{
-                  color: "#94a3b8",
-                  fontSize: 9,
-                  marginBottom: 1,
-                }}
-              >
-                Projected AQI
-              </div>
-
-              <strong
-                style={{
-                  fontSize: 20,
-                  color: "#4ade80",
-                }}
-              >
-                {simulatedAqi.toFixed(1)}
-              </strong>
-            </div>
-          </div>
-
-          <div
-            style={{
-              color: "#4ade80",
-              fontSize: 11,
-              fontWeight: 600,
-              marginTop: 5,
-            }}
-          >
-            &darr; {simulationDrop}% projected improvement
-          </div>
-
-          <div
-            style={{
-              color: "#64748b",
-              fontSize: 9,
-              marginTop: 4,
-            }}
-          >
-            Based on the active intervention scenario
+          <p>
+            {usable
+              ? "Historically adjusted modeled CPCB-method AQI estimate"
+              : ward.error || "The latest modeled context is stale, incomplete, or unavailable."}
+          </p>
+          <div className="sentinel-chip-row">
+            <span className={`sentinel-chip ${ward.data_fresh ? "ok" : "warn"}`}>
+              {ward.data_fresh ? "Fresh" : "Not fresh"}
+            </span>
+            <span className={`sentinel-chip ${ward.data_usable ? "ok" : "warn"}`}>
+              {ward.data_usable ? "Usable" : "Not usable"}
+            </span>
+            <span className="sentinel-chip neutral">Modeled · not observed</span>
           </div>
         </div>
-      )}
+      </section>
 
-      {loading && (
-        <div
-          style={{
-            color: "#94a3b8",
-            fontSize: 11,
-          }}
-        >
-          Loading ward intelligence...
-        </div>
-      )}
+      <div className="sentinel-metric-grid">
+        <div><span>Base modeled AQI</span><strong>{formatNumber(base, 0)}</strong></div>
+        <div><span>Spatial factor</span><strong>{adjusted ? formatNumber(factor, 3) : "Not applied"}</strong></div>
+        <div><span>Dominant pollutant</span><strong>{ward.dominant || "—"}</strong></div>
+        <div><span>Data age</span><strong>{ward.data_age_hours != null ? `${formatNumber(ward.data_age_hours, 1)} h` : "—"}</strong></div>
+      </div>
 
-      {/* CITIZEN HEALTH ADVISORY */}
-
-      {advisory && !loading && (
-        <div
-          style={{
-            background: "rgba(255,255,255,0.045)",
-            border: "1px solid rgba(148, 163, 184, 0.1)",
-            borderRadius: 8,
-            padding: 10,
-            marginBottom: 14,
-          }}
-        >
-          <div
-            style={{
-              color: "#94a3b8",
-              fontSize: 9,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              marginBottom: 5,
-            }}
-          >
-            Citizen Health Advisory
-          </div>
-
-          <div
-            style={{
-              fontSize: 11,
-              color: "#94a3b8",
-              marginBottom: 6,
-            }}
-          >
-            Current AQI {advisory.aqi}
-            {" · "}
-            {advisory.category.en}
-            {" / "}
-            {advisory.category.mr}
-          </div>
-
-          <div
-            style={{
-              marginBottom: 5,
-              color: "#f1f5f9",
-              fontSize: 12,
-              lineHeight: 1.5,
-            }}
-          >
-            {advisory.advisory.en}
-          </div>
-
-          <div
-            style={{
-              color: "#cbd5e1",
-              fontSize: 12,
-              lineHeight: 1.5,
-            }}
-          >
-            {advisory.advisory.mr}
-          </div>
-
-          <div
-            style={{
-              fontSize: 10,
-              color: "#64748b",
-              marginTop: 7,
-              lineHeight: 1.4,
-            }}
-          >
-            {advisory.sensitive_groups.en}
-          </div>
-        </div>
-      )}
-
-      {/* ENFORCEMENT INTELLIGENCE */}
-
-      {plan && !loading && (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              marginBottom: 9,
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-              color: "#cbd5e1",
-            }}
-          >
-            Enforcement Priorities
-          </div>
-
-          {plan.recommended.map((a, index) => (
-            <div
-              key={a.lever}
-              style={{
-                borderLeft:
-                  index === 0
-                    ? "3px solid #4ade80"
-                    : "2px solid #334155",
-
-                background:
-                  index === 0
-                    ? "rgba(74, 222, 128, 0.05)"
-                    : "transparent",
-
-                padding:
-                  index === 0
-                    ? "8px 8px 8px 10px"
-                    : "4px 0 4px 9px",
-
-                borderRadius:
-                  index === 0
-                    ? "0 6px 6px 0"
-                    : 0,
-
-                marginBottom: 10,
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 600,
-                  fontSize: 12,
-                }}
-              >
-                #{a.priority} {a.label}
-              </div>
-
-              <div
-                style={{
-                  color: "#4ade80",
-                  fontSize: 11,
-                  marginTop: 2,
-                }}
-              >
-                AQI {plan.base_aqi}
-                {" → "}
-                {a.projected_aqi}
-                {" "}
-                (−{a.pct_drop}%)
-              </div>
-
-              <ul
-                style={{
-                  margin: "5px 0",
-                  paddingLeft: 16,
-                  fontSize: 11,
-                  color: "#cbd5e1",
-                  lineHeight: 1.5,
-                }}
-              >
-                {a.actions.map((act, i) => (
-                  <li key={i}>
-                    {act}
-                  </li>
-                ))}
-              </ul>
-
-              <div
-                style={{
-                  fontSize: 9,
-                  color: "#64748b",
-                  lineHeight: 1.4,
-                }}
-              >
-                {a.evidence}
-              </div>
+      <section className="sentinel-section">
+        <div className="sentinel-section-title">Pollutant context</div>
+        <div className="sentinel-pollutants">
+          {[
+            ["PM2.5", ward.pm25, "µg/m³"],
+            ["PM10", ward.pm10, "µg/m³"],
+            ["NO₂", ward.no2, "µg/m³"],
+            ["SO₂", ward.so2, "µg/m³"],
+            ["O₃", ward.ozone, "µg/m³"],
+            ["CO", ward.co, "mg/m³"],
+          ].map(([label, value, unit]) => (
+            <div key={String(label)}>
+              <span>{label}</span>
+              <strong>{formatNumber(value as number | null | undefined, value === ward.co ? 4 : 2)}</strong>
+              <small>{unit}</small>
             </div>
           ))}
+        </div>
+      </section>
 
-          {plan.not_recommended.length > 0 && (
-            <>
-              <div
-                style={{
-                  fontSize: 9,
-                  fontWeight: 700,
-                  marginTop: 14,
-                  marginBottom: 7,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                Not Worth Enforcement Effort
-              </div>
+      {partialError && <div className="sentinel-inline-warning">{partialError}</div>}
+      {loading && <div className="sentinel-loading-line">Loading advisory and enforcement intelligence…</div>}
 
-              {plan.not_recommended.map((a) => (
-                <div
-                  key={a.lever}
-                  style={{
-                    borderLeft: "2px solid #475569",
-                    paddingLeft: 8,
-                    marginBottom: 8,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#94a3b8",
-                    }}
-                  >
-                    {a.label}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 9,
-                      color: "#64748b",
-                      marginTop: 2,
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {a.reason}
-                  </div>
-                </div>
-              ))}
-            </>
+      {advisory && !loading && (
+        <section className="sentinel-section sentinel-advisory">
+          <div className="sentinel-section-title">Citizen health advisory</div>
+          <p className="sentinel-section-primary">{advisory.advisory?.en || "Advisory unavailable."}</p>
+          {advisory.sensitive_groups?.en && <p className="sentinel-section-secondary">{advisory.sensitive_groups.en}</p>}
+          {advisory.advisory?.mr && (
+            <details>
+              <summary>मराठी सल्ला</summary>
+              <p>{advisory.advisory.mr}</p>
+              {advisory.sensitive_groups?.mr && <p className="sentinel-section-secondary">{advisory.sensitive_groups.mr}</p>}
+            </details>
           )}
-        </>
+        </section>
       )}
-    </div>
+
+      {plan && !loading && (
+        <section className="sentinel-section">
+          <div className="sentinel-section-heading-row">
+            <div className="sentinel-section-title">Enforcement priorities</div>
+            <span className="sentinel-decision-badge">Decision support</span>
+          </div>
+
+          {recommended.length === 0 ? (
+            <p className="sentinel-section-secondary">No ranked enforcement actions returned.</p>
+          ) : (
+            <div className="sentinel-action-list">
+              {recommended.slice(0, 4).map((action, index) => (
+                <article className="sentinel-action" key={`${action.lever || action.label || "action"}-${index}`}>
+                  <div className="sentinel-action-rank">{index + 1}</div>
+                  <div>
+                    <div className="sentinel-action-title-row">
+                      <strong>{action.label || action.lever || "Recommended action"}</strong>
+                      {potential(action) && <span>{potential(action)} potential</span>}
+                    </div>
+                    {(action.reason || action.evidence) && <p>{action.reason || action.evidence}</p>}
+                    {action.actions && action.actions.length > 0 && (
+                      <ul>
+                        {action.actions.slice(0, 3).map((item) => <li key={item}>{item}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      <footer className="sentinel-provenance">
+        <div>
+          <span>Context time</span>
+          <strong>{formatContextTime(ward.aqi_context_time || ward.reading_time)}</strong>
+        </div>
+        <p>
+          Derived from CAMS Global modeled concentrations using CPCB-method breakpoint logic.
+          {adjusted ? " A historical composite-AQI spatial factor is applied only to the final localized AQI estimate." : ""}
+          {" "}Pollutant concentrations and sub-indices remain unadjusted. This is not an official CPCB monitoring-station observation.
+        </p>
+      </footer>
+    </aside>
   );
 }

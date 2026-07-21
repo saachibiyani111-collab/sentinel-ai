@@ -1,164 +1,241 @@
 "use client";
 
 type Props = {
-  cityAqi: number;
+  availableCount?: number;
+  usableCount?: number;
+  freshCount?: number;
+  totalCount?: number;
+  dataSource?: string;
+  loading?: boolean;
+  backendReachable?: boolean;
+  onRefresh?: () => void;
 };
 
-function aqiCategory(aqi: number): string {
-  if (aqi <= 50) return "Good";
-  if (aqi <= 100) return "Satisfactory";
-  if (aqi <= 200) return "Moderate";
-  if (aqi <= 300) return "Poor";
-  if (aqi <= 400) return "Very Poor";
-  return "Severe";
-}
+export default function DashboardHeader({
+  availableCount = 0,
+  usableCount = 0,
+  freshCount = 0,
+  totalCount = 0,
+  dataSource = "Open-Meteo · CAMS Global",
+  loading = false,
+  backendReachable = true,
+  onRefresh,
+}: Props) {
+  const hasLocations = totalCount > 0;
 
-function categoryColor(category: string): string {
-  switch (category) {
-    case "Good":
-      return "#22c55e";
-    case "Satisfactory":
-      return "#84cc16";
-    case "Moderate":
-      return "#eab308";
-    case "Poor":
-      return "#f97316";
-    case "Very Poor":
-      return "#ef4444";
-    case "Severe":
-      return "#a855f7";
-    default:
-      return "#94a3b8";
-  }
-}
+  const allCurrent =
+    hasLocations &&
+    usableCount === totalCount;
 
-export default function DashboardHeader({ cityAqi }: Props) {
-  const category = aqiCategory(cityAqi);
-  const color = categoryColor(category);
+  const partial =
+    usableCount > 0 &&
+    usableCount < totalCount;
+
+  /*
+   * UI/system status colors are intentionally
+   * separate from AQI category colors.
+   *
+   * Cyan  = normal system operation
+   * Yellow = partial data coverage
+   * Orange = no usable context
+   * Red    = backend unavailable
+   */
+
+  const status = loading
+    ? {
+        label: "UPDATING CONTEXT",
+        detail:
+          "Fetching latest modeled data",
+        tone: "#38bdf8",
+      }
+    : !backendReachable
+      ? {
+          label: "SYSTEM UNAVAILABLE",
+          detail:
+            "Backend connection failed",
+          tone: "#ef4444",
+        }
+      : allCurrent
+        ? {
+            label:
+              "CURRENT CONTEXT READY",
+            detail:
+              `${usableCount}/${totalCount} locations usable`,
+            tone: "#38bdf8",
+          }
+        : partial
+          ? {
+              label:
+                "PARTIAL COVERAGE",
+              detail:
+                `${usableCount}/${totalCount} locations usable`,
+              tone: "#eab308",
+            }
+          : {
+              label:
+                "CONTEXT UNAVAILABLE",
+              detail:
+                "No usable current AQI context",
+              tone: "#f97316",
+            };
 
   return (
-    <header
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 58,
-        zIndex: 20,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 20px",
-        background: "rgba(15, 23, 42, 0.97)",
-        borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
-        color: "#f8fafc",
-        fontFamily: "sans-serif",
-        boxSizing: "border-box",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-          }}
-        >
-          SENTINEL AI
+    <header className="sentinel-header">
+
+      {/* ======================================================
+          BRAND
+          ====================================================== */}
+
+      <div className="sentinel-brand">
+
+        <div className="sentinel-logo">
+          S
         </div>
 
-        <div
-          style={{
-            fontSize: 10,
-            color: "#94a3b8",
-            marginTop: 2,
-          }}
-        >
-          Urban Air Quality Intelligence
+        <div>
+
+          <div className="sentinel-brand-row">
+
+            <span className="sentinel-brand-name">
+              SENTINEL AI
+            </span>
+
+            <span className="sentinel-brand-badge">
+              DECISION INTELLIGENCE
+            </span>
+
+          </div>
+
+          <div className="sentinel-brand-subtitle">
+            Urban Air Quality Decision Support
+          </div>
+
         </div>
+
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 18,
-        }}
-      >
+      {/* ======================================================
+          STATUS AREA
+          ====================================================== */}
+
+      <div className="sentinel-header-status">
+
+        {/* Analysis Area */}
+
+        <div className="sentinel-header-stat sentinel-hide-mobile">
+
+          <span>
+            Analysis Area
+          </span>
+
+          <strong>
+            Pune, Maharashtra
+          </strong>
+
+        </div>
+
+
+        <div className="sentinel-header-divider sentinel-hide-mobile" />
+
+
+        {/* AQI Context */}
+
+        <div className="sentinel-header-stat sentinel-hide-tablet">
+
+          <span>
+            AQI Context
+          </span>
+
+          <strong>
+            Modeled · {dataSource}
+          </strong>
+
+        </div>
+
+
+        <div className="sentinel-header-divider sentinel-hide-tablet" />
+
+
+        {/* Coverage */}
+
+        <div className="sentinel-header-stat">
+
+          <span>
+            Coverage
+          </span>
+
+          <strong>
+            {availableCount}/{totalCount || 0} available
+            {" · "}
+            {freshCount} fresh
+          </strong>
+
+        </div>
+
+
+        {/* Refresh */}
+
+        {onRefresh && (
+          <button
+            type="button"
+            className="sentinel-refresh"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label="Refresh AQI context"
+            title="Refresh AQI context"
+          >
+            {loading ? "…" : "↻"}
+          </button>
+        )}
+
+
+        {/* System Status */}
+
         <div
+          className="sentinel-system-pill"
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontSize: 10,
-            color: "#86efac",
-            fontWeight: 700,
-            letterSpacing: "0.05em",
+            borderColor:
+              `${status.tone}33`,
+
+            background:
+              `${status.tone}0D`,
           }}
         >
+
           <span
+            className="sentinel-system-dot"
             style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "#22c55e",
-              display: "inline-block",
-              boxShadow: "0 0 8px rgba(34,197,94,0.7)",
+              background:
+                status.tone,
+
+              boxShadow:
+                `0 0 0 4px ${status.tone}20`,
             }}
           />
 
-          LIVE
-        </div>
 
-        <div
-          style={{
-            fontSize: 12,
-            color: "#cbd5e1",
-          }}
-        >
-          Pune
-        </div>
+          <div>
 
-        {cityAqi > 0 && (
-          <div
-            style={{
-              borderLeft: "1px solid #334155",
-              paddingLeft: 18,
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-            }}
-          >
-            <span
+            <div
+              className="sentinel-system-label"
               style={{
-                fontSize: 9,
-                color: "#94a3b8",
-                letterSpacing: "0.05em",
+                color:
+                  status.tone,
               }}
             >
-              CITY AQI
-            </span>
+              {status.label}
+            </div>
 
-            <strong
-              style={{
-                fontSize: 16,
-              }}
-            >
-              {cityAqi.toFixed(1)}
-            </strong>
+            <div className="sentinel-system-detail">
+              {status.detail}
+            </div>
 
-            <span
-              style={{
-                fontSize: 10,
-                color,
-                fontWeight: 600,
-              }}
-            >
-              {category}
-            </span>
           </div>
-        )}
+
+        </div>
+
       </div>
+
     </header>
   );
 }

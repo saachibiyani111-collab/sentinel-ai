@@ -1,0 +1,349 @@
+{
+  "_meta": {
+    "description": "Historical relative composite-AQI burden indicators for Sentinel AI analysis locations.",
+    "method": "Median of paired hourly ratios: target-location composite AQI divided by the mean composite AQI of at least three simultaneously reporting OTHER monitoring locations.",
+    "reference_method": "leave_one_out_simultaneous_station_mean",
+    "primary_statistic": "median_hourly_ratio",
+    "minimum_other_stations": 3,
+    "minimum_paired_hours": 500,
+    "number_of_input_locations": 8,
+    "number_of_output_locations": 8,
+    "limitations": [
+      "Input series contain composite AQI rather than pollutant-specific concentrations.",
+      "Composite AQI is nonlinear and its dominant pollutant may vary over time.",
+      "Historical relative burden does not represent current local AQI.",
+      "Historical relative burden is not a forecast.",
+      "Monitoring or analysis locations are not automatically equivalent to administrative wards.",
+      "Historical spatial relationships may change under different meteorological and emissions conditions."
+    ],
+    "interpretation": "Values above 1 indicate historically higher composite AQI relative to simultaneously reporting comparison locations; values below 1 indicate historically lower relative composite AQI."
+  },
+  "locations": {
+    "Revenue Colony Shivajinagar": {
+      "historical_relative_burden_index": 1.798,
+      "historical_relative_burden_band": "Historically much higher",
+      "median_hourly_ratio": 1.798,
+      "mean_hourly_ratio": 2.125,
+      "ratio_q1": 1.226,
+      "ratio_q3": 2.623,
+      "ratio_iqr": 1.396,
+      "median_location_aqi": 149.0,
+      "median_reference_aqi": 77.2,
+      "n_paired_hours": 15609,
+      "average_other_stations_reporting": 4.1,
+      "years_covered": [
+        2020,
+        2021,
+        2022,
+        2023
+      ],
+      "year_months_covered": 29,
+      "months_of_year_covered": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2020": 397,
+        "2021": 7228,
+        "2022": 3718,
+        "2023": 4266
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "Mhada Colony": {
+      "historical_relative_burden_index": 0.942,
+      "historical_relative_burden_band": "Historically near reference",
+      "median_hourly_ratio": 0.942,
+      "mean_hourly_ratio": 1.044,
+      "ratio_q1": 0.685,
+      "ratio_q3": 1.287,
+      "ratio_iqr": 0.602,
+      "median_location_aqi": 90.0,
+      "median_reference_aqi": 97.3,
+      "n_paired_hours": 14983,
+      "average_other_stations_reporting": 4.14,
+      "years_covered": [
+        2020,
+        2021,
+        2022,
+        2023
+      ],
+      "year_months_covered": 29,
+      "months_of_year_covered": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2020": 397,
+        "2021": 6918,
+        "2022": 3437,
+        "2023": 4231
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "Bhosari": {
+      "historical_relative_burden_index": 0.806,
+      "historical_relative_burden_band": "Historically lower",
+      "median_hourly_ratio": 0.806,
+      "mean_hourly_ratio": 0.909,
+      "ratio_q1": 0.599,
+      "ratio_q3": 1.115,
+      "ratio_iqr": 0.516,
+      "median_location_aqi": 82.0,
+      "median_reference_aqi": 98.5,
+      "n_paired_hours": 10911,
+      "average_other_stations_reporting": 4.43,
+      "years_covered": [
+        2020,
+        2021,
+        2022,
+        2023
+      ],
+      "year_months_covered": 25,
+      "months_of_year_covered": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2020": 397,
+        "2021": 5452,
+        "2022": 2197,
+        "2023": 2865
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "Transport Nagar Nigdi": {
+      "historical_relative_burden_index": 0.804,
+      "historical_relative_burden_band": "Historically lower",
+      "median_hourly_ratio": 0.804,
+      "mean_hourly_ratio": 0.919,
+      "ratio_q1": 0.611,
+      "ratio_q3": 1.11,
+      "ratio_iqr": 0.5,
+      "median_location_aqi": 76.0,
+      "median_reference_aqi": 96.2,
+      "n_paired_hours": 11447,
+      "average_other_stations_reporting": 4.36,
+      "years_covered": [
+        2020,
+        2021,
+        2022,
+        2023
+      ],
+      "year_months_covered": 25,
+      "months_of_year_covered": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2020": 397,
+        "2021": 5229,
+        "2022": 3057,
+        "2023": 2764
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "Hadapsar": {
+      "historical_relative_burden_index": 0.764,
+      "historical_relative_burden_band": "Historically lower",
+      "median_hourly_ratio": 0.764,
+      "mean_hourly_ratio": 0.853,
+      "ratio_q1": 0.571,
+      "ratio_q3": 1.023,
+      "ratio_iqr": 0.452,
+      "median_location_aqi": 70.0,
+      "median_reference_aqi": 93.8,
+      "n_paired_hours": 10304,
+      "average_other_stations_reporting": 4.04,
+      "years_covered": [
+        2021,
+        2022
+      ],
+      "year_months_covered": 19,
+      "months_of_year_covered": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2021": 6473,
+        "2022": 3831
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "MIT Kothrud": {
+      "historical_relative_burden_index": 0.673,
+      "historical_relative_burden_band": "Historically much lower",
+      "median_hourly_ratio": 0.673,
+      "mean_hourly_ratio": 0.821,
+      "ratio_q1": 0.499,
+      "ratio_q3": 0.953,
+      "ratio_iqr": 0.454,
+      "median_location_aqi": 55.0,
+      "median_reference_aqi": 97.0,
+      "n_paired_hours": 12136,
+      "average_other_stations_reporting": 4.29,
+      "years_covered": [
+        2021,
+        2022,
+        2023
+      ],
+      "year_months_covered": 24,
+      "months_of_year_covered": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2021": 6817,
+        "2022": 3335,
+        "2023": 1984
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "Savitribai Phule University": {
+      "historical_relative_burden_index": 0.611,
+      "historical_relative_burden_band": "Historically much lower",
+      "median_hourly_ratio": 0.611,
+      "mean_hourly_ratio": 0.659,
+      "ratio_q1": 0.311,
+      "ratio_q3": 0.904,
+      "ratio_iqr": 0.593,
+      "median_location_aqi": 66.0,
+      "median_reference_aqi": 112.3,
+      "n_paired_hours": 4484,
+      "average_other_stations_reporting": 4.44,
+      "years_covered": [
+        2023
+      ],
+      "year_months_covered": 7,
+      "months_of_year_covered": [
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2023": 4484
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    },
+    "Katraj Dairy": {
+      "historical_relative_burden_index": 0.579,
+      "historical_relative_burden_band": "Historically much lower",
+      "median_hourly_ratio": 0.579,
+      "mean_hourly_ratio": 0.621,
+      "ratio_q1": 0.415,
+      "ratio_q3": 0.768,
+      "ratio_iqr": 0.354,
+      "median_location_aqi": 65.0,
+      "median_reference_aqi": 111.7,
+      "n_paired_hours": 4393,
+      "average_other_stations_reporting": 4.44,
+      "years_covered": [
+        2023
+      ],
+      "year_months_covered": 8,
+      "months_of_year_covered": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "paired_hours_by_year": {
+        "2023": 4393
+      },
+      "data_type": "historical_composite_aqi",
+      "is_current_aqi": false,
+      "is_forecast": false,
+      "is_official_ward_aqi": false
+    }
+  },
+  "skipped": []
+}

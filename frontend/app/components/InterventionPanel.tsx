@@ -1,391 +1,1435 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useState,
-  useCallback,
-  useRef,
 } from "react";
+
 
 type Lever = {
   key: string;
   label: string;
-  affects: string[];
-  note: string;
+  affects?: string[];
+  note?: string;
 };
 
-type WardResult = {
+
+type BaselineWard = {
+  name: string;
+  lat: number | null;
+  lon: number | null;
+  aqi: number | null;
+};
+
+
+type BreakdownItem = {
+  source: string;
+  source_weight_pct: number;
+  assumed_source_reduction_pct: number;
+  weighted_burden_reduction_pct: number;
+};
+
+
+type WardScenarioResult = {
   ward: string;
-  lat: number;
-  lon: number;
-  base_aqi: number;
-  new_aqi: number;
-  aqi_drop: number;
-  pct_drop: number;
-};
 
-type SimulateResponse = {
-  wards: WardResult[];
+  base_aqi?: number | null;
+  current_aqi_context?: number | null;
 
-  summary: {
-    avg_aqi_before: number;
-    avg_aqi_after: number;
-    avg_drop: number;
-    avg_pct_drop: number;
-    best_ward: string;
+  new_aqi?: null;
+  aqi_drop?: null;
+  pct_drop?: null;
+
+  baseline_burden_index: number;
+  remaining_burden_index: number;
+  estimated_burden_reduction_pct: number;
+
+  reductions?: Record<string, number>;
+
+  breakdown?: BreakdownItem[];
+
+  lat?: number | null;
+  lon?: number | null;
+
+  aqi_context_source?: string;
+  aqi_context_reading_time?: string | null;
+  aqi_context_method?: string;
+
+  model?: {
+    type?: string;
+    output?: string;
+    is_aqi_forecast?: boolean;
+    is_emission_measurement?: boolean;
+    limitations?: string[];
   };
 };
 
-const BACKEND =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+type SimulateAllResponse = {
+  wards?: WardScenarioResult[];
+  results?: WardScenarioResult[];
+
+  summary?: {
+    average_burden_reduction_pct?: number;
+    avg_burden_reduction_pct?: number;
+
+    average_remaining_burden_index?: number;
+    avg_remaining_burden_index?: number;
+
+    best_ward?: string | null;
+  };
+
+  model?: {
+    type?: string;
+    output?: string;
+    is_aqi_forecast?: boolean;
+    is_emission_measurement?: boolean;
+    limitations?: string[];
+  };
+
+  disclaimer?: string;
+};
+
 
 type Props = {
-  cityAqi: number;
+  wards: BaselineWard[];
 
   onResult?: (
-    result: SimulateResponse | null
+    result: SimulateAllResponse | null
   ) => void;
 };
 
+
+const BACKEND =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://localhost:8000";
+
+
+function formatNumber(
+  value: number | null | undefined,
+  digits = 1
+): string {
+  if (
+    value == null ||
+    !Number.isFinite(value)
+  ) {
+    return "—";
+  }
+
+  return value.toFixed(digits);
+}
+
+
+function sourceLabel(
+  source: string
+): string {
+  const labels:
+    Record<string, string> = {
+      road_dust:
+        "Road Dust",
+
+      vehicles:
+        "Traffic",
+
+      domestic:
+        "Domestic",
+
+      construction:
+        "Construction",
+
+      hotels:
+        "Hotels / Commercial",
+
+      industry:
+        "Industry",
+
+      other:
+        "Other",
+    };
+
+  return (
+    labels[source] ||
+    source
+      .replaceAll("_", " ")
+      .replace(
+        /\b\w/g,
+        (letter) =>
+          letter.toUpperCase()
+      )
+  );
+}
+
+
 export default function InterventionPanel({
-  cityAqi,
+  wards,
   onResult,
 }: Props) {
   const [levers, setLevers] =
     useState<Lever[]>([]);
 
   const [values, setValues] =
-    useState<Record<string, number>>({});
+    useState<Record<string, number>>(
+      {}
+    );
 
   const [result, setResult] =
-    useState<SimulateResponse | null>(null);
+    useState<SimulateAllResponse | null>(
+      null
+    );
 
-  const [loading, setLoading] =
+  const [loadingLevers, setLoadingLevers] =
+    useState(true);
+
+  const [running, setRunning] =
     useState(false);
 
-  const debounceRef =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [error, setError] =
+    useState<string | null>(null);
+
+
+  // ------------------------------------------------------------
+  // LOAD INTERVENTION LEVERS
+  // ------------------------------------------------------------
 
   useEffect(() => {
-    fetch(`${BACKEND}/api/interventions`)
-      .then((r) => r.json())
+    let cancelled = false;
 
-      .then((d) =>
-        setLevers(d.interventions || [])
-      )
 
-      .catch((err) =>
+    async function loadLevers() {
+      try {
+        setLoadingLevers(true);
+        setError(null);
+
+
+        const response =
+          await fetch(
+            `${BACKEND}/api/interventions`,
+            {
+              cache: "no-store",
+            }
+          );
+
+
+        if (!response.ok) {
+          throw new Error(
+            `Intervention API returned HTTP ${response.status}`
+          );
+        }
+
+
+        const data =
+          await response.json();
+
+
+        const interventions:
+          Lever[] =
+            data.interventions ?? [];
+
+
+        if (!cancelled) {
+          setLevers(
+            interventions
+          );
+
+
+          const initial:
+            Record<string, number> =
+              {};
+
+
+          interventions.forEach(
+            (lever) => {
+              initial[
+                lever.key
+              ] = 0;
+            }
+          );
+
+
+          setValues(
+            initial
+          );
+        }
+      } catch (err) {
         console.error(
           "Failed to load interventions:",
           err
-        )
-      );
-  }, []);
+        );
 
-  const runSimulation = useCallback(
-    (
-      currentValues: Record<string, number>
-    ) => {
-      const reductions: Record<string, number> = {};
 
-      for (const [k, v] of Object.entries(currentValues)) {
-        if (v > 0) {
-          reductions[k] = v / 100;
+        if (!cancelled) {
+          setError(
+            "Unable to load intervention controls."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingLevers(
+            false
+          );
         }
       }
+    }
 
-      setLoading(true);
 
-      fetch(`${BACKEND}/api/simulate/all`, {
-        method: "POST",
+    loadLevers();
 
-        headers: {
-          "Content-Type": "application/json",
-        },
 
-        body: JSON.stringify({
-          city_aqi: cityAqi,
-          reductions,
-        }),
-      })
-        .then((r) => r.json())
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-        .then((d: SimulateResponse) => {
-          setResult(d);
 
-          onResult?.(d);
-        })
-
-        .catch((err) =>
-          console.error(
-            "Simulation failed:",
-            err
-          )
-        )
-
-        .finally(() =>
-          setLoading(false)
-        );
-    },
-    [cityAqi, onResult]
-  );
+  // ------------------------------------------------------------
+  // SLIDER CHANGE
+  // ------------------------------------------------------------
 
   const handleSlider = (
     key: string,
     value: number
   ) => {
-    const next = {
-      ...values,
-      [key]: value,
-    };
-
-    setValues(next);
-
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
-    debounceRef.current = setTimeout(
-      () => runSimulation(next),
-      300
+    setValues(
+      (current) => ({
+        ...current,
+        [key]: value,
+      })
     );
-  };
 
-  const reset = () => {
-    setValues({});
+
+    /*
+     * A changed slider represents a new scenario.
+     * Clear the previous result so the UI never presents
+     * an old result as belonging to the new slider values.
+     */
     setResult(null);
+    setError(null);
+
     onResult?.(null);
   };
 
+
+  // ------------------------------------------------------------
+  // RUN CITY-WIDE SCENARIO
+  // ------------------------------------------------------------
+
+  const runSimulation =
+    useCallback(async () => {
+      const reductions:
+        Record<string, number> =
+          {};
+
+
+      Object.entries(
+        values
+      ).forEach(
+        ([key, value]) => {
+          reductions[key] =
+            Math.min(
+              1,
+              Math.max(
+                0,
+                value / 100
+              )
+            );
+        }
+      );
+
+
+      const hasIntervention =
+        Object.values(
+          reductions
+        ).some(
+          (value) =>
+            value > 0
+        );
+
+
+      if (!hasIntervention) {
+        setError(
+          "Set at least one intervention above 0% to run a scenario."
+        );
+
+        return;
+      }
+
+
+      if (wards.length === 0) {
+        setError(
+          "Current ward/locality context is unavailable."
+        );
+
+        return;
+      }
+
+
+      try {
+        setRunning(true);
+        setError(null);
+
+
+        const response =
+          await fetch(
+            `${BACKEND}/api/simulate/all`,
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              /*
+               * The backend owns current AQI retrieval.
+               *
+               * Do NOT send frontend AQI values or coordinates
+               * as scenario baselines.
+               */
+              body:
+                JSON.stringify({
+                  reductions,
+                }),
+            }
+          );
+
+
+        if (!response.ok) {
+          const message =
+            await response.text();
+
+
+          throw new Error(
+            `Scenario API returned HTTP ${response.status}: ${message}`
+          );
+        }
+
+
+        const data:
+          SimulateAllResponse =
+            await response.json();
+
+
+        setResult(
+          data
+        );
+
+        onResult?.(
+          data
+        );
+      } catch (err) {
+        console.error(
+          "Scenario simulation failed:",
+          err
+        );
+
+
+        setError(
+          "Unable to run the intervention scenario. Check that the backend is running and try again."
+        );
+      } finally {
+        setRunning(
+          false
+        );
+      }
+    }, [
+      values,
+      wards,
+      onResult,
+    ]);
+
+
+  // ------------------------------------------------------------
+  // RESET
+  // ------------------------------------------------------------
+
+  const reset = () => {
+    const cleared:
+      Record<string, number> =
+        {};
+
+
+    levers.forEach(
+      (lever) => {
+        cleared[
+          lever.key
+        ] = 0;
+      }
+    );
+
+
+    setValues(
+      cleared
+    );
+
+    setResult(
+      null
+    );
+
+    setError(
+      null
+    );
+
+    onResult?.(
+      null
+    );
+  };
+
+
+  // ------------------------------------------------------------
+  // RESULT NORMALISATION
+  // ------------------------------------------------------------
+
+  const wardResults =
+    result?.wards ??
+    result?.results ??
+    [];
+
+
+  const validResults =
+    wardResults.filter(
+      (item) =>
+        Number.isFinite(
+          item.estimated_burden_reduction_pct
+        ) &&
+        Number.isFinite(
+          item.remaining_burden_index
+        )
+    );
+
+
+  const averageReduction =
+    result?.summary
+      ?.average_burden_reduction_pct ??
+    result?.summary
+      ?.avg_burden_reduction_pct ??
+    (
+      validResults.length > 0
+        ? validResults.reduce(
+            (
+              total,
+              item
+            ) =>
+              total +
+              item
+                .estimated_burden_reduction_pct,
+            0
+          ) /
+          validResults.length
+
+        : null
+    );
+
+
+  const averageRemaining =
+    result?.summary
+      ?.average_remaining_burden_index ??
+    result?.summary
+      ?.avg_remaining_burden_index ??
+    (
+      validResults.length > 0
+        ? validResults.reduce(
+            (
+              total,
+              item
+            ) =>
+              total +
+              item
+                .remaining_burden_index,
+            0
+          ) /
+          validResults.length
+
+        : null
+    );
+
+
+  /*
+   * Source weights are currently city-level in the backend,
+   * so one valid result is sufficient to show the common
+   * scenario breakdown.
+   */
+  const breakdown =
+    validResults[0]
+      ?.breakdown ??
+    [];
+
+
+  const sortedBreakdown =
+    [...breakdown].sort(
+      (a, b) =>
+        b.weighted_burden_reduction_pct -
+        a.weighted_burden_reduction_pct
+    );
+
+
+  const hasActiveIntervention =
+    Object.values(values).some(
+      (value) => Number.isFinite(value) && value > 0
+    );
+
+  const analyzedCount = validResults.length;
+  const backendLimitations = result?.model?.limitations ?? [];
+  const resultDisclaimer = result?.disclaimer ?? null;
+
+  // ------------------------------------------------------------
+  // RENDER
+  // ------------------------------------------------------------
+
   return (
-    <div
+    <aside
+      className="sentinel-panel"
       style={{
-        position: "absolute",
-        top: 74,
-        left: 16,
-        width: 320,
-        background: "rgba(15, 23, 42, 0.96)",
-        color: "#f8fafc",
-        border: "1px solid rgba(148, 163, 184, 0.16)",
-        borderRadius: 12,
-        padding: 16,
-        fontFamily: "sans-serif",
-        fontSize: 13,
-        zIndex: 10,
-        maxHeight: "calc(100vh - 100px)",
-        overflowY: "auto",
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.18)",
-        boxSizing: "border-box",
+        position:
+          "absolute",
+
+        top:
+          80,
+
+        left:
+          16,
+
+        zIndex:
+          10,
+
+        width:
+          350,
+
+        maxWidth:
+          "calc(100vw - 32px)",
+
+        maxHeight:
+          "calc(100vh - 110px)",
+
+        overflowY:
+          "auto",
+
+        padding:
+          18,
+
+        color:
+          "#f8fafc",
       }}
     >
+
+      {/* ------------------------------------------------------ */}
+      {/* HEADER */}
+      {/* ------------------------------------------------------ */}
+
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 3,
+          display:
+            "flex",
+
+          alignItems:
+            "flex-start",
+
+          justifyContent:
+            "space-between",
+
+          gap:
+            14,
+
+          marginBottom:
+            5,
         }}
       >
-        <strong
-          style={{
-            fontSize: 15,
-          }}
-        >
-          Intervention Simulator
-        </strong>
+        <div>
+          <div
+            className="sentinel-label"
+            style={{
+              color:
+                "#38bdf8",
+
+              marginBottom:
+                5,
+            }}
+          >
+            Scenario Lab
+          </div>
+
+
+          <h2
+            style={{
+              margin:
+                0,
+
+              color:
+                "#f8fafc",
+
+              fontSize:
+                18,
+
+              fontWeight:
+                750,
+
+              letterSpacing:
+                "-0.025em",
+            }}
+          >
+            Intervention Simulator
+          </h2>
+        </div>
+
 
         <button
-          onClick={reset}
+          type="button"
+          onClick={
+            reset
+          }
+          disabled={
+            running
+          }
           style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid #475569",
-            color: "#cbd5e1",
-            borderRadius: 6,
-            padding: "3px 9px",
-            cursor: "pointer",
-            fontSize: 10,
+            padding:
+              "6px 10px",
+
+            border:
+              "1px solid rgba(148,163,184,0.2)",
+
+            borderRadius:
+              8,
+
+            background:
+              "rgba(148,163,184,0.06)",
+
+            color:
+              "#cbd5e1",
+
+            fontSize:
+              10,
+
+            fontWeight:
+              650,
           }}
         >
           Reset
         </button>
       </div>
 
-      <div
+
+      <p
         style={{
-          color: "#64748b",
-          fontSize: 10,
-          marginBottom: 15,
+          margin:
+            "0 0 16px",
+
+          color:
+            "#94a3b8",
+
+          fontSize:
+            10,
+
+          lineHeight:
+            1.55,
         }}
       >
-        Explore projected AQI impact under different policy
-        interventions.
-      </div>
+        Test first-order intervention
+        assumptions across Sentinel AI&apos;s
+        configured Pune analysis locations.
+        Current AQI remains unchanged.
+      </p>
 
-      {levers.map((lever) => (
+
+      {/* ------------------------------------------------------ */}
+      {/* LEVERS */}
+      {/* ------------------------------------------------------ */}
+
+      {loadingLevers ? (
         <div
-          key={lever.key}
           style={{
-            marginBottom: 15,
+            padding:
+              "16px 0",
+
+            color:
+              "#94a3b8",
+
+            fontSize:
+              11,
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-          >
-            <label
-              style={{
-                fontSize: 11,
-                color: "#e2e8f0",
-                lineHeight: 1.4,
-              }}
-            >
-              {lever.label}
-            </label>
+          Loading intervention controls…
+        </div>
+      ) : levers.length === 0 ? (
+        <div
+          style={{
+            padding: "14px 0",
+            color: "#94a3b8",
+            fontSize: 10,
+            lineHeight: 1.5,
+          }}
+        >
+          No intervention controls are currently available.
+        </div>
+      ) : (
+        <div>
+          {levers.map(
+            (lever) => {
+              const value =
+                values[
+                  lever.key
+                ] ?? 0;
 
-            <span
-              style={{
-                minWidth: 32,
-                textAlign: "right",
-                fontSize: 11,
-                color:
-                  (values[lever.key] || 0) > 0
-                    ? "#4ade80"
-                    : "#94a3b8",
-                fontWeight: 600,
-              }}
-            >
-              {values[lever.key] || 0}%
-            </span>
-          </div>
 
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={values[lever.key] || 0}
-            onChange={(e) =>
-              handleSlider(
-                lever.key,
-                Number(e.target.value)
-              )
+              return (
+                <div
+                  key={
+                    lever.key
+                  }
+                  style={{
+                    marginBottom:
+                      16,
+                  }}
+                >
+                  <div
+                    style={{
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "space-between",
+
+                      gap:
+                        12,
+
+                      marginBottom:
+                        6,
+                    }}
+                  >
+                    <label
+                      htmlFor={
+                        `intervention-${lever.key}`
+                      }
+                      style={{
+                        color:
+                          "#e2e8f0",
+
+                        fontSize:
+                          11,
+
+                        fontWeight:
+                          650,
+                      }}
+                    >
+                      {
+                        lever.label
+                      }
+                    </label>
+
+
+                    <span
+                      style={{
+                        minWidth:
+                          44,
+
+                        padding:
+                          "3px 7px",
+
+                        borderRadius:
+                          999,
+
+                        background:
+                          value > 0
+                            ? "rgba(56,189,248,0.12)"
+                            : "rgba(148,163,184,0.08)",
+
+                        color:
+                          value > 0
+                            ? "#7dd3fc"
+                            : "#94a3b8",
+
+                        fontSize:
+                          10,
+
+                        fontWeight:
+                          750,
+
+                        textAlign:
+                          "center",
+                      }}
+                    >
+                      {value}%
+                    </span>
+                  </div>
+
+
+                  <input
+                    id={
+                      `intervention-${lever.key}`
+                    }
+                    type="range"
+                    min={
+                      0
+                    }
+                    max={
+                      100
+                    }
+                    step={
+                      5
+                    }
+                    value={
+                      value
+                    }
+                    disabled={
+                      running
+                    }
+                    onChange={
+                      (event) =>
+                        handleSlider(
+                          lever.key,
+                          Number(
+                            event
+                              .target
+                              .value
+                          )
+                        )
+                    }
+                    style={{
+                      width:
+                        "100%",
+
+                      accentColor:
+                        "#38bdf8",
+                    }}
+                  />
+
+
+                  {lever.note && (
+                    <div
+                      style={{
+                        marginTop:
+                          4,
+
+                        color:
+                          "#64748b",
+
+                        fontSize:
+                          9,
+
+                        lineHeight:
+                          1.45,
+                      }}
+                    >
+                      {
+                        lever.note
+                      }
+                    </div>
+                  )}
+                </div>
+              );
+            }
+          )}
+        </div>
+      )}
+
+
+      {/* ------------------------------------------------------ */}
+      {/* RUN BUTTON */}
+      {/* ------------------------------------------------------ */}
+
+      {!loadingLevers &&
+        levers.length > 0 && (
+          <button
+            type="button"
+            onClick={
+              runSimulation
+            }
+            disabled={
+              running ||
+              !hasActiveIntervention ||
+              wards.length === 0
             }
             style={{
-              width: "100%",
-              marginTop: 5,
-            }}
-          />
+              width:
+                "100%",
 
-          <div
-            style={{
-              fontSize: 9,
-              color: "#64748b",
-              marginTop: 2,
-              lineHeight: 1.4,
+              padding:
+                "10px 14px",
+
+              marginTop:
+                2,
+
+              borderRadius:
+                9,
+
+              background:
+                running
+                  ? "rgba(56,189,248,0.18)"
+                  : "linear-gradient(135deg, #0284c7, #0ea5e9)",
+
+              color:
+                "#ffffff",
+
+              fontSize:
+                11,
+
+              fontWeight:
+                750,
+
+              letterSpacing:
+                "0.02em",
+
+              boxShadow:
+                running
+                  ? "none"
+                  : "0 8px 24px rgba(14,165,233,0.2)",
+
+              opacity:
+                running
+                  ? 0.7
+                  : 1,
             }}
           >
-            {lever.note}
-          </div>
-        </div>
-      ))}
+            {running
+              ? "Running scenario…"
+              : "Run City-wide Scenario"}
+          </button>
+        )}
 
-      {loading && (
+
+      {/* ------------------------------------------------------ */}
+      {/* ERROR */}
+      {/* ------------------------------------------------------ */}
+
+      {error && (
         <div
           style={{
-            color: "#94a3b8",
-            fontSize: 11,
-            paddingTop: 4,
+            marginTop:
+              12,
+
+            padding:
+              10,
+
+            border:
+              "1px solid rgba(248,113,113,0.2)",
+
+            borderRadius:
+              8,
+
+            background:
+              "rgba(127,29,29,0.16)",
+
+            color:
+              "#fca5a5",
+
+            fontSize:
+              10,
+
+            lineHeight:
+              1.5,
           }}
         >
-          Calculating projected impact...
+          {error}
         </div>
       )}
 
-      {result && !loading && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            background: "rgba(34, 197, 94, 0.08)",
-            border: "1px solid rgba(74, 222, 128, 0.25)",
-            borderRadius: 8,
-          }}
-        >
-          <div
-            style={{
-              color: "#94a3b8",
-              fontSize: 9,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              marginBottom: 6,
-            }}
-          >
-            City-wide projected impact
-          </div>
 
+      {/* ------------------------------------------------------ */}
+      {/* SCENARIO RESULT */}
+      {/* ------------------------------------------------------ */}
+
+      {result &&
+        !running && (
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
+              marginTop:
+                16,
+
+              padding:
+                14,
+
+              border:
+                "1px solid rgba(34,197,94,0.22)",
+
+              borderRadius:
+                12,
+
+              background:
+                "linear-gradient(145deg, rgba(34,197,94,0.10), rgba(15,23,42,0.25))",
             }}
           >
-            <strong
+            <div
+              className="sentinel-label"
               style={{
-                fontSize: 18,
-                color: "#e2e8f0",
+                marginBottom:
+                  10,
+
+                color:
+                  "#86efac",
               }}
             >
-              {result.summary.avg_aqi_before}
-            </strong>
+              Scenario Result
+            </div>
 
-            <span
+            <div
               style={{
-                color: "#64748b",
-                fontSize: 16,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginBottom: 12,
+                padding: "7px 9px",
+                borderRadius: 8,
+                background: "rgba(15,23,42,0.30)",
+                border: "1px solid rgba(148,163,184,0.10)",
+                color: "#94a3b8",
+                fontSize: 9,
               }}
             >
-              &rarr;
-            </span>
+              <span>Locations analyzed</span>
+              <strong style={{ color: "#e2e8f0" }}>
+                {analyzedCount}/{wards.length}
+              </strong>
+            </div>
 
-            <strong
+            <div
               style={{
-                color: "#4ade80",
-                fontSize: 22,
+                display:
+                  "grid",
+
+                gridTemplateColumns:
+                  "1fr auto 1fr",
+
+                alignItems:
+                  "center",
+
+                gap:
+                  10,
               }}
             >
-              {result.summary.avg_aqi_after}
-            </strong>
-          </div>
+              <div>
+                <div
+                  style={{
+                    color:
+                      "#94a3b8",
 
-          <div
-            style={{
-              color: "#4ade80",
-              fontSize: 12,
-              fontWeight: 600,
-              marginTop: 3,
-            }}
-          >
-            &darr; {result.summary.avg_pct_drop}% projected
-            improvement
-          </div>
+                    fontSize:
+                      9,
 
-          <div
-            style={{
-              color: "#64748b",
-              fontSize: 9,
-              marginTop: 6,
-              lineHeight: 1.4,
-            }}
-          >
-            What-if estimate based on the selected intervention
-            scenario.
+                    marginBottom:
+                      3,
+                  }}
+                >
+                  Baseline burden
+                </div>
+
+                <strong
+                  style={{
+                    color:
+                      "#f8fafc",
+
+                    fontSize:
+                      23,
+                  }}
+                >
+                  100
+                </strong>
+              </div>
+
+
+              <div
+                style={{
+                  color:
+                    "#64748b",
+
+                  fontSize:
+                    18,
+                }}
+              >
+                →
+              </div>
+
+
+              <div
+                style={{
+                  textAlign:
+                    "right",
+                }}
+              >
+                <div
+                  style={{
+                    color:
+                      "#94a3b8",
+
+                    fontSize:
+                      9,
+
+                    marginBottom:
+                      3,
+                  }}
+                >
+                  Remaining burden
+                </div>
+
+                <strong
+                  style={{
+                    color:
+                      "#86efac",
+
+                    fontSize:
+                      23,
+                  }}
+                >
+                  {
+                    formatNumber(
+                      averageRemaining,
+                      2
+                    )
+                  }
+                </strong>
+              </div>
+            </div>
+
+
+            <div
+              style={{
+                marginTop:
+                  12,
+
+                paddingTop:
+                  11,
+
+                borderTop:
+                  "1px solid rgba(134,239,172,0.14)",
+              }}
+            >
+              <div
+                style={{
+                  color:
+                    "#94a3b8",
+
+                  fontSize:
+                    9,
+
+                  marginBottom:
+                    3,
+                }}
+              >
+                Estimated relative
+                particulate-burden reduction
+              </div>
+
+
+              <strong
+                style={{
+                  color:
+                    "#4ade80",
+
+                  fontSize:
+                    24,
+
+                  letterSpacing:
+                    "-0.03em",
+                }}
+              >
+                ↓{" "}
+                {
+                  formatNumber(
+                    averageReduction,
+                    2
+                  )
+                }
+                %
+              </strong>
+            </div>
+
+
+            {/* ------------------------------------------------ */}
+            {/* SOURCE BREAKDOWN */}
+            {/* ------------------------------------------------ */}
+
+            {sortedBreakdown.length >
+              0 && (
+              <div
+                style={{
+                  marginTop:
+                    15,
+                }}
+              >
+                <div
+                  className="sentinel-label"
+                  style={{
+                    marginBottom:
+                      9,
+                  }}
+                >
+                  Modeled reduction breakdown
+                </div>
+
+
+                {sortedBreakdown.map(
+                  (item) => {
+                    const width =
+                      Math.min(
+                        100,
+                        Math.max(
+                          0,
+                          item
+                            .weighted_burden_reduction_pct *
+                            2.5
+                        )
+                      );
+
+
+                    return (
+                      <div
+                        key={
+                          item.source
+                        }
+                        style={{
+                          marginBottom:
+                            8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display:
+                              "flex",
+
+                            justifyContent:
+                              "space-between",
+
+                            gap:
+                              10,
+
+                            marginBottom:
+                              3,
+
+                            color:
+                              "#cbd5e1",
+
+                            fontSize:
+                              9,
+                          }}
+                        >
+                          <span>
+                            {
+                              sourceLabel(
+                                item.source
+                              )
+                            }
+                          </span>
+
+                          <strong
+                            style={{
+                              color:
+                                "#e2e8f0",
+                            }}
+                          >
+                            {
+                              formatNumber(
+                                item
+                                  .weighted_burden_reduction_pct,
+                                2
+                              )
+                            }
+                            %
+                          </strong>
+                        </div>
+
+
+                        <div
+                          style={{
+                            height:
+                              4,
+
+                            overflow:
+                              "hidden",
+
+                            borderRadius:
+                              999,
+
+                            background:
+                              "rgba(148,163,184,0.12)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width:
+                                `${width}%`,
+
+                              height:
+                                "100%",
+
+                              borderRadius:
+                                999,
+
+                              background:
+                                "#38bdf8",
+
+                              transition:
+                                "width 300ms ease",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+            )}
+
+
+            {/* ------------------------------------------------ */}
+            {/* MODEL BOUNDARY */}
+            {/* ------------------------------------------------ */}
+
+            <div
+              style={{
+                marginTop:
+                  13,
+
+                padding:
+                  9,
+
+                borderRadius:
+                  8,
+
+                background:
+                  "rgba(15,23,42,0.38)",
+
+                color:
+                  "#94a3b8",
+
+                fontSize:
+                  9,
+
+                lineHeight:
+                  1.5,
+              }}
+            >
+              <strong
+                style={{
+                  color:
+                    "#cbd5e1",
+                }}
+              >
+                Scenario estimate only.
+              </strong>
+              {" "}
+              {resultDisclaimer ||
+                "This represents relative source-weighted particulate-burden change. It does not predict future CPCB AQI, atmospheric dispersion, chemistry, or meteorological feedback."}
+
+              {backendLimitations.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 7,
+                    paddingTop: 7,
+                    borderTop: "1px solid rgba(148,163,184,0.10)",
+                  }}
+                >
+                  {backendLimitations.slice(0, 3).map((limitation) => (
+                    <div key={limitation} style={{ marginTop: 3 }}>
+                      • {limitation}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+    </aside>
   );
 }
